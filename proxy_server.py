@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-from __future__ import annotations
 import base64
 import os
 import secrets
@@ -10,7 +9,7 @@ import urllib.parse
 import time
 from typing import Any
 
-def parse_positive_int(value: str | None, default: int) -> int:
+def parse_positive_int(value            , default     )       :
     try:
         return max(1, int(value or default))
     except (TypeError, ValueError):
@@ -19,13 +18,13 @@ def parse_positive_int(value: str | None, default: int) -> int:
 MAX_PROXY_CONNECTIONS = parse_positive_int(os.environ.get("LOCAL_PROXY_MAX_CONNECTIONS"), 256)
 proxy_connection_sem = threading.BoundedSemaphore(MAX_PROXY_CONNECTIONS)
 
-def parse_int(value: Any) -> int:
+def parse_int(value     )       :
     try:
         return int(value)
     except (TypeError, ValueError):
         return 0
 
-def recv_exact(sock: socket.socket, size: int) -> bytes:
+def recv_exact(sock               , size     )         :
     data = b""
     while len(data) < size:
         chunk = sock.recv(size - len(data))
@@ -34,7 +33,7 @@ def recv_exact(sock: socket.socket, size: int) -> bytes:
         data += chunk
     return data
 
-def parse_host_port(authority: str, default_port: int) -> tuple[str, int]:
+def parse_host_port(authority     , default_port     )                   :
     authority = authority.strip()
     if authority.startswith("["):
         host_part, sep, rest = authority.partition("]")
@@ -49,18 +48,18 @@ def parse_host_port(authority: str, default_port: int) -> tuple[str, int]:
         return host, parse_int(port_text) or default_port
     return authority, default_port
 
-def get_proxy_credentials() -> tuple[str | None, str | None]:
+def get_proxy_credentials()                                 :
     user = os.environ.get("LOCAL_PROXY_USER") or os.environ.get("LOCAL_PROXY_USERNAME")
     password = os.environ.get("LOCAL_PROXY_PASS") or os.environ.get("LOCAL_PROXY_PASSWORD")
     if user is None and password is None:
         return None, None
     return user or "", password or ""
 
-def proxy_auth_enabled() -> bool:
+def proxy_auth_enabled()        :
     user, password = get_proxy_credentials()
     return user is not None and password is not None
 
-def parse_http_basic_auth(lines: list[str]) -> tuple[str | None, str | None]:
+def parse_http_basic_auth(lines           )                                 :
     for line in lines:
         name, sep, value = line.partition(":")
         if not sep or name.strip().lower() != "proxy-authorization":
@@ -78,13 +77,13 @@ def parse_http_basic_auth(lines: list[str]) -> tuple[str | None, str | None]:
         return username, password
     return None, None
 
-def check_credentials(username: str | None, password: str | None) -> bool:
+def check_credentials(username            , password            )        :
     expected_user, expected_pass = get_proxy_credentials()
     if expected_user is None or expected_pass is None:
         return True
     return secrets.compare_digest(username or "", expected_user) and secrets.compare_digest(password or "", expected_pass)
 
-def dns_query_over_tun0(host: str, qtype: int, dns_server: str, timeout: float) -> str | None:
+def dns_query_over_tun0(host     , qtype     , dns_server     , timeout       )              :
     import random
     sock = None
     try:
@@ -109,7 +108,8 @@ def dns_query_over_tun0(host: str, qtype: int, dns_server: str, timeout: float) 
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.settimeout(timeout)
         try:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, b"tun0")
+            if hasattr(socket, "SO_BINDTODEVICE"):
+                sock.setsockopt(socket.SOL_SOCKET, getattr(socket, "SO_BINDTODEVICE"), b"tun0")
         except OSError as e:
             if "operation not permitted" in str(e).lower() or e.errno == 1:
                 print("[DNS 绑定失败] [错误代码 3006] DNS 解析绑定 tun0 权限不足，请确保程序以 root 权限运行！", flush=True)
@@ -178,7 +178,7 @@ def dns_query_over_tun0(host: str, qtype: int, dns_server: str, timeout: float) 
         return None
     return None
 
-def resolve_dns_over_tun0(host: str, dns_server: str = "8.8.8.8", timeout: float = 3.0) -> str | None:
+def resolve_dns_over_tun0(host     , dns_server      = "8.8.8.8", timeout        = 3.0)              :
     try:
         socket.inet_aton(host)
         return host
@@ -191,7 +191,7 @@ def resolve_dns_over_tun0(host: str, dns_server: str = "8.8.8.8", timeout: float
         pass
     return dns_query_over_tun0(host, 1, dns_server, timeout) or dns_query_over_tun0(host, 28, dns_server, timeout)
 
-def create_connection(address: tuple[str, int], timeout: float = 20) -> socket.socket:
+def create_connection(address                 , timeout        = 20)                 :
     host, port = address
     resolved_ip = resolve_dns_over_tun0(host)
     if resolved_ip:
@@ -204,7 +204,8 @@ def create_connection(address: tuple[str, int], timeout: float = 20) -> socket.s
         try:
             sock = socket.socket(af, socktype, proto)
             sock.settimeout(timeout)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, b"tun0")
+            if hasattr(socket, "SO_BINDTODEVICE"):
+                sock.setsockopt(socket.SOL_SOCKET, getattr(socket, "SO_BINDTODEVICE"), b"tun0")
             sock.connect(sa)
             return sock
         except OSError as e:
@@ -220,7 +221,7 @@ def create_connection(address: tuple[str, int], timeout: float = 20) -> socket.s
     else:
         raise OSError("getaddrinfo returns empty list")
 
-def relay(left: socket.socket, right: socket.socket) -> None:
+def relay(left               , right               )        :
     sockets = [left, right]
     while True:
         readable, _, errored = select.select(sockets, [], sockets, 120)
@@ -233,7 +234,7 @@ def relay(left: socket.socket, right: socket.socket) -> None:
                 return
             target.sendall(data)
 
-def socks5_client(client: socket.socket, first_byte: bytes) -> None:
+def socks5_client(client               , first_byte       )        :
     upstream = None
     try:
         methods_count = recv_exact(client, 1)[0]
@@ -285,7 +286,7 @@ def socks5_client(client: socket.socket, first_byte: bytes) -> None:
         if upstream:
             upstream.close()
 
-def read_http_header(client: socket.socket, first_byte: bytes) -> bytes:
+def read_http_header(client               , first_byte       )         :
     data = first_byte
     while b"\r\n\r\n" not in data and len(data) < 65536:
         chunk = client.recv(4096)
@@ -294,7 +295,7 @@ def read_http_header(client: socket.socket, first_byte: bytes) -> bytes:
         data += chunk
     return data
 
-def http_client(client: socket.socket, first_byte: bytes) -> None:
+def http_client(client               , first_byte       )        :
     upstream = None
     try:
         header = read_http_header(client, first_byte)
@@ -375,7 +376,7 @@ def http_client(client: socket.socket, first_byte: bytes) -> None:
         if upstream:
             upstream.close()
 
-def proxy_client(client: socket.socket, address: tuple[str, int]) -> None:
+def proxy_client(client               , address                 )        :
     try:
         client.settimeout(30)
         first = recv_exact(client, 1)
@@ -392,7 +393,7 @@ def proxy_client(client: socket.socket, address: tuple[str, int]) -> None:
         except OSError:
             pass
 
-def start_proxy_server(host: str, port: int) -> None:
+def start_proxy_server(host     , port     )        :
     is_ipv6 = ":" in host or host == ""
     af = socket.AF_INET6 if is_ipv6 else socket.AF_INET
     server = None
@@ -459,7 +460,7 @@ def start_proxy_server(host: str, port: int) -> None:
                     pass
                 continue
 
-            def run_client() -> None:
+            def run_client()        :
                 try:
                     proxy_client(client, address)
                 finally:
